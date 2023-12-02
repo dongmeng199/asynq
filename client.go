@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq/internal/base"
 	"github.com/hibiken/asynq/internal/errors"
 	"github.com/hibiken/asynq/internal/rdb"
+	"github.com/redis/go-redis/v9"
 )
 
 // A Client is responsible for scheduling tasks.
@@ -49,6 +49,7 @@ const (
 	TaskIDOpt
 	RetentionOpt
 	GroupOpt
+	HeadersOpt
 )
 
 // Option specifies the task processing behavior.
@@ -75,7 +76,19 @@ type (
 	processInOption time.Duration
 	retentionOption time.Duration
 	groupOption     string
+	headersOption   map[string][]string
 )
+
+// Headers returns an option to attach metadata used for the task.
+func Headers(name map[string][]string) Option {
+	return headersOption(name)
+}
+
+func (headers headersOption) String() string {
+	return fmt.Sprintf("Headers(%#v)", map[string][]string(headers))
+}
+func (headers headersOption) Type() OptionType   { return HeadersOpt }
+func (headers headersOption) Value() interface{} { return map[string][]string(headers) }
 
 // MaxRetry returns an option to specify the max number of times
 // the task will be retried.
@@ -150,9 +163,9 @@ func (t deadlineOption) Value() interface{} { return time.Time(t) }
 // TTL duration must be greater than or equal to 1 second.
 //
 // Uniqueness of a task is based on the following properties:
-//     - Task Type
-//     - Task Payload
-//     - Queue Name
+//   - Task Type
+//   - Task Payload
+//   - Queue Name
 func Unique(ttl time.Duration) Option {
 	return uniqueOption(ttl)
 }
@@ -226,6 +239,7 @@ type option struct {
 	processAt time.Time
 	retention time.Duration
 	group     string
+	headers   map[string][]string
 }
 
 // composeOptions merges user provided options into the default options
@@ -240,6 +254,7 @@ func composeOptions(opts ...Option) (option, error) {
 		timeout:   0, // do not set to defaultTimeout here
 		deadline:  time.Time{},
 		processAt: time.Now(),
+		headers:   map[string][]string{},
 	}
 	for _, opt := range opts {
 		switch opt := opt.(type) {
@@ -279,6 +294,11 @@ func composeOptions(opts ...Option) (option, error) {
 				return option{}, errors.New("group key cannot be empty")
 			}
 			res.group = key
+		case headersOption:
+			for k, v := range opt {
+				res.headers[k] = v
+			}
+
 		default:
 			// ignore unexpected option
 		}
@@ -378,6 +398,7 @@ func (c *Client) EnqueueContext(ctx context.Context, task *Task, opts ...Option)
 		UniqueKey: uniqueKey,
 		GroupKey:  opt.group,
 		Retention: int64(opt.retention.Seconds()),
+		Headers:   opt.headers,
 	}
 	now := time.Now()
 	var state base.TaskState

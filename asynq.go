@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	"github.com/hibiken/asynq/internal/base"
+	"github.com/redis/go-redis/v9"
 )
 
 // Task represents a unit of work to be performed.
@@ -23,6 +23,7 @@ type Task struct {
 	// typename indicates the type of task to be performed.
 	typename string
 
+	headers map[string][]string
 	// payload holds data needed to perform the task.
 	payload []byte
 
@@ -33,8 +34,9 @@ type Task struct {
 	w *ResultWriter
 }
 
-func (t *Task) Type() string    { return t.typename }
-func (t *Task) Payload() []byte { return t.payload }
+func (t *Task) Headers() map[string][]string { return t.headers }
+func (t *Task) Type() string                 { return t.typename }
+func (t *Task) Payload() []byte              { return t.payload }
 
 // ResultWriter returns a pointer to the ResultWriter associated with the task.
 //
@@ -53,11 +55,12 @@ func NewTask(typename string, payload []byte, opts ...Option) *Task {
 }
 
 // newTask creates a task with the given typename, payload and ResultWriter.
-func newTask(typename string, payload []byte, w *ResultWriter) *Task {
+func newTask(typename string, payload []byte, headers map[string][]string, w *ResultWriter) *Task {
 	return &Task{
 		typename: typename,
 		payload:  payload,
 		w:        w,
+		headers:  headers,
 	}
 }
 
@@ -71,6 +74,9 @@ type TaskInfo struct {
 
 	// Type is the type name of the task.
 	Type string
+
+	// Headers contains metadata attached to a message.
+	Headers map[string]string
 
 	// Payload is the payload data of the task.
 	Payload []byte
@@ -438,10 +444,11 @@ func (opt RedisClusterClientOpt) MakeRedisClient() interface{} {
 //
 // Three URI schemes are supported, which are redis:, rediss:, redis-socket:, and redis-sentinel:.
 // Supported formats are:
-//     redis://[:password@]host[:port][/dbnumber]
-//     rediss://[:password@]host[:port][/dbnumber]
-//     redis-socket://[:password@]path[?db=dbnumber]
-//     redis-sentinel://[:password@]host1[:port][,host2:[:port]][,hostN:[:port]][?master=masterName]
+//
+//	redis://[:password@]host[:port][/dbnumber]
+//	rediss://[:password@]host[:port][/dbnumber]
+//	redis-socket://[:password@]path[?db=dbnumber]
+//	redis-sentinel://[:password@]host1[:port][,host2:[:port]][,hostN:[:port]][?master=masterName]
 func ParseRedisURI(uri string) (RedisConnOpt, error) {
 	u, err := url.Parse(uri)
 	if err != nil {

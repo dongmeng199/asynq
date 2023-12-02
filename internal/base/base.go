@@ -237,6 +237,9 @@ type TaskMessage struct {
 	// Type indicates the kind of the task to be performed.
 	Type string
 
+	// headers holds headers of the task.
+	Headers map[string][]string
+
 	// Payload holds data needed to process the task.
 	Payload []byte
 
@@ -301,7 +304,8 @@ func EncodeMessage(msg *TaskMessage) ([]byte, error) {
 	if msg == nil {
 		return nil, fmt.Errorf("cannot encode nil message")
 	}
-	return proto.Marshal(&pb.TaskMessage{
+
+	d := &pb.TaskMessage{
 		Type:         msg.Type,
 		Payload:      msg.Payload,
 		Id:           msg.ID,
@@ -316,7 +320,13 @@ func EncodeMessage(msg *TaskMessage) ([]byte, error) {
 		GroupKey:     msg.GroupKey,
 		Retention:    msg.Retention,
 		CompletedAt:  msg.CompletedAt,
-	})
+		Headers:      map[string]*pb.StringList{},
+	}
+	for k, v := range msg.Headers {
+		d.Headers[k] = &pb.StringList{Value: v}
+	}
+
+	return proto.Marshal(d)
 }
 
 // DecodeMessage unmarshals the given bytes and returns a decoded task message.
@@ -325,6 +335,11 @@ func DecodeMessage(data []byte) (*TaskMessage, error) {
 	if err := proto.Unmarshal(data, &pbmsg); err != nil {
 		return nil, err
 	}
+	headers := map[string][]string{}
+	for k, v := range pbmsg.Headers {
+		headers[k] = v.Value
+	}
+
 	return &TaskMessage{
 		Type:         pbmsg.GetType(),
 		Payload:      pbmsg.GetPayload(),
@@ -340,6 +355,7 @@ func DecodeMessage(data []byte) (*TaskMessage, error) {
 		GroupKey:     pbmsg.GetGroupKey(),
 		Retention:    pbmsg.GetRetention(),
 		CompletedAt:  pbmsg.GetCompletedAt(),
+		Headers:      headers,
 	}, nil
 }
 
